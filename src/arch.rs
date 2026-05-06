@@ -109,45 +109,58 @@ impl PackageProvider for ArchProvider {
     }
 
     fn install(&self, packages: &[String]) -> Result<()> {
-        let mut cmd = Command::new(&self.helper);
+        println!("{} Packages to install: {:?}", "=>".blue().bold(), packages);
         
-        // If not using an AUR helper, we need sudo for pacman installs
+        let ans = Confirm::new("Proceed with installation?")
+            .with_default(true)
+            .prompt()
+            .unwrap_or(false);
+            
+        if !ans {
+            println!("{} Installation cancelled.", "=>".red().bold());
+            return Ok(());
+        }
+
+        let mut cmd = Command::new(&self.helper);
         if self.helper == "pacman" {
             cmd = Command::new("sudo");
             cmd.arg("pacman");
         }
 
-        cmd.arg("-S").arg("--needed");
+        cmd.arg("-S").arg("--needed").arg("--noconfirm");
         for pkg in packages {
             cmd.arg(pkg);
         }
 
-        let status = cmd.status().map_err(|e| miette!("Failed to execute install: {}", e))?;
-        if !status.success() {
-            return Err(miette!("Install command failed"));
-        }
-
+        run_with_spinner(cmd, "Installing packages...", "Installation complete!")?;
         Ok(())
     }
 
     fn remove(&self, packages: &[String]) -> Result<()> {
-        let mut cmd = Command::new(&self.helper);
+        println!("{} Packages to remove: {:?}", "=>".yellow().bold(), packages);
         
+        let ans = Confirm::new("Proceed with removal?")
+            .with_default(true)
+            .prompt()
+            .unwrap_or(false);
+            
+        if !ans {
+            println!("{} Removal cancelled.", "=>".red().bold());
+            return Ok(());
+        }
+
+        let mut cmd = Command::new(&self.helper);
         if self.helper == "pacman" {
             cmd = Command::new("sudo");
             cmd.arg("pacman");
         }
 
-        cmd.arg("-Rs"); // Remove package and unneeded dependencies
+        cmd.arg("-Rs").arg("--noconfirm");
         for pkg in packages {
             cmd.arg(pkg);
         }
 
-        let status = cmd.status().map_err(|e| miette!("Failed to execute remove: {}", e))?;
-        if !status.success() {
-            return Err(miette!("Remove command failed"));
-        }
-
+        run_with_spinner(cmd, "Removing packages...", "Removal complete!")?;
         Ok(())
     }
 
@@ -209,90 +222,139 @@ impl PackageProvider for ArchProvider {
             cmd.arg("pacman");
         }
         cmd.arg("-Syu").arg("--noconfirm");
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
 
-        let mut child = cmd.spawn().map_err(|e| miette!("Failed to start update: {}", e))?;
-        let stdout_pipe = child.stdout.take().unwrap();
-        let stderr_pipe = child.stderr.take().unwrap();
-
-        let (tx, rx) = std::sync::mpsc::channel();
-        
-        let tx_out = tx.clone();
-        thread::spawn(move || {
-            let reader = BufReader::new(stdout_pipe);
-            for line in reader.lines() {
-                if let Ok(l) = line {
-                    let _ = tx_out.send(l);
-                }
-            }
-        });
-
-        let tx_err = tx.clone();
-        thread::spawn(move || {
-            let reader = BufReader::new(stderr_pipe);
-            for line in reader.lines() {
-                if let Ok(l) = line {
-                    let _ = tx_err.send(l);
-                }
-            }
-        });
-
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(ProgressStyle::default_spinner()
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-            .template("{spinner:.green} {msg}")
-            .unwrap());
-        pb.set_message("Updating system... Press 'v' for raw output");
-        pb.enable_steady_tick(Duration::from_millis(100));
-
-        enable_raw_mode().unwrap_or(());
-        let mut show_raw = false;
-        
-        loop {
-            if let Ok(Some(status)) = child.try_wait() {
-                disable_raw_mode().unwrap_or(());
-                pb.finish_and_clear();
-                if status.success() {
-                    println!("{} Update complete!", "=>".green().bold());
-                } else {
-                    return Err(miette!("Update failed with status: {}", status));
-                }
-                break;
-            }
-
-            if event::poll(Duration::from_millis(50)).unwrap_or(false) {
-                if let Ok(Event::Key(key_event)) = event::read() {
-                    if key_event.code == KeyCode::Char('v') && !show_raw {
-                        show_raw = true;
-                        pb.finish_and_clear();
-                        disable_raw_mode().unwrap_or(());
-                        println!("{} Switching to raw output...", "=>".cyan().bold());
-                    } else if key_event.code == KeyCode::Char('c') && key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
-                        disable_raw_mode().unwrap_or(());
-                        pb.finish_and_clear();
-                        let _ = child.kill();
-                        return Err(miette!("Update aborted by user."));
-                    }
-                }
-            }
-
-            while let Ok(msg) = rx.try_recv() {
-                if show_raw {
-                    println!("{}", msg);
-                }
-            }
-        }
-
+        run_with_spinner(cmd, "Updating system...", "Update complete!")?;
         Ok(())
     }
 
     fn clean(&self) -> Result<()> {
-        // Remove orphans
-        // pacman -Qtdq | sudo pacman -Rns -
-        println!("Cleaning orphans and package cache...");
+        println!("{} Scanning for orphaned packages...", "=>".blue().bold());
         
-        // Dummy implementation
+        // Query for orphans: -Q (query), -t (unrequired dependencies), -d (deps), -q (quiet/names only)
+        let output = Command::new("pacman")
+            .arg("-Qtdq")
+            .output()
+            .map_err(|e| miette!("Failed to check for orphans: {}", e))?;
+            
+        // pacman -Qtdq returns an error code if no orphans are found, or an empty stdout
+        if !output.status.success() || output.stdout.is_empty() {
+            println!("{} No orphaned packages found. System is clean!", "=>".green().bold());
+            return Ok(());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let orphans: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+        
+        if orphans.is_empty() {
+            println!("{} No orphaned packages found. System is clean!", "=>".green().bold());
+            return Ok(());
+        }
+
+        println!("{} Found {} orphaned packages to remove:", "=>".yellow().bold(), orphans.len());
+        // For a beautiful UX, we can just print the array or format it nicely.
+        println!("{:?}", orphans);
+
+        let ans = Confirm::new("Proceed with cleanup?")
+            .with_default(true)
+            .prompt()
+            .unwrap_or(false);
+            
+        if !ans {
+            println!("{} Cleanup cancelled.", "=>".red().bold());
+            return Ok(());
+        }
+
+        let mut cmd = Command::new("sudo");
+        cmd.arg("pacman").arg("-Rns").arg("--noconfirm");
+        for pkg in orphans {
+            cmd.arg(pkg);
+        }
+
+        run_with_spinner(cmd, "Pruning orphaned packages...", "Cleanup complete!")?;
         Ok(())
     }
+}
+
+fn run_with_spinner(mut cmd: Command, msg: &str, success_msg: &str) -> Result<()> {
+    // Elevate privileges natively BEFORE we hide output and enter raw mode.
+    // This prevents sudo from prompting for a password invisibly and stealing tty.
+    let _ = Command::new("sudo").arg("-v").status();
+
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| miette!("Failed to start command: {}", e))?;
+    let stdout_pipe = child.stdout.take().unwrap();
+    let stderr_pipe = child.stderr.take().unwrap();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    
+    let tx_out = tx.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stdout_pipe);
+        for line in reader.lines() {
+            if let Ok(l) = line {
+                let _ = tx_out.send(l);
+            }
+        }
+    });
+
+    let tx_err = tx.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stderr_pipe);
+        for line in reader.lines() {
+            if let Ok(l) = line {
+                let _ = tx_err.send(l);
+            }
+        }
+    });
+
+    enable_raw_mode().unwrap_or(());
+
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(ProgressStyle::default_spinner()
+        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+        .template("{spinner:.green} {msg}")
+        .unwrap());
+    pb.set_message(format!("{} Press 'v' for raw output", msg));
+    pb.enable_steady_tick(Duration::from_millis(100));
+
+    let mut show_raw = false;
+    
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            pb.finish_and_clear();
+            disable_raw_mode().unwrap_or(());
+            if status.success() {
+                println!("{} {}", "=>".green().bold(), success_msg);
+            } else {
+                return Err(miette!("Command failed with status: {}", status));
+            }
+            break;
+        }
+
+        if event::poll(Duration::from_millis(50)).unwrap_or(false) {
+            if let Ok(Event::Key(key_event)) = event::read() {
+                if key_event.code == KeyCode::Char('v') && !show_raw {
+                    show_raw = true;
+                    pb.finish_and_clear();
+                    disable_raw_mode().unwrap_or(());
+                    println!("{} Switching to raw output...", "=>".cyan().bold());
+                } else if key_event.code == KeyCode::Char('c') && key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
+                    pb.finish_and_clear();
+                    disable_raw_mode().unwrap_or(());
+                    let _ = child.kill();
+                    return Err(miette!("Aborted by user."));
+                }
+            }
+        }
+
+        while let Ok(msg) = rx.try_recv() {
+            if show_raw {
+                println!("{}", msg);
+            }
+        }
+    }
+
+    Ok(())
 }
