@@ -62,16 +62,21 @@ fn main() -> Result<()> {
             let results = provider.search(&query)?;
             
             let mut table = Table::new();
-            table.set_header(vec!["Repository", "Name", "Version", "Description", "Status"]);
+            table.load_preset(comfy_table::presets::UTF8_FULL)
+                 .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+                 .set_header(vec!["Repository", "Name", "Version", "Description", "Status"]);
             
             for pkg in results {
-                let status = if pkg.is_installed { "Installed".green().to_string() } else { "Not Installed".red().to_string() };
+                use comfy_table::{Cell, Color, Attribute};
+                let status_str = if pkg.is_installed { "Installed" } else { "Not Installed" };
+                let status_color = if pkg.is_installed { Color::Green } else { Color::Red };
+                
                 table.add_row(vec![
-                    pkg.repository.blue().to_string(),
-                    pkg.name.bold().to_string(),
-                    pkg.version.yellow().to_string(),
-                    pkg.description,
-                    status,
+                    Cell::new(&pkg.repository).fg(Color::Blue),
+                    Cell::new(&pkg.name).add_attribute(Attribute::Bold),
+                    Cell::new(&pkg.version).fg(Color::Yellow),
+                    Cell::new(&pkg.description),
+                    Cell::new(status_str).fg(status_color),
                 ]);
             }
             
