@@ -1,0 +1,7 @@
+- [ ] Initialize Cargo project and add core crates (`clap`, `anyhow`, `directories`).
+- [ ] Implement XDG path resolution for config/state.
+- [ ] Create `PackageProvider` trait in `src/provider.rs`.
+- [ ] Implement `ArchProvider` (handle `sudo`, `pacman`, and AUR helper detection).
+- [ ] Build the CLI routing logic (matching `s`, `i`, `u`, `c` and full words).
+- [ ] Implement the `clean` module (orphan pruning logic).
+- [ ] Generate the final portfolio-ready README.md.
