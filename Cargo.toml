@@ -11,3 +11,4 @@ miette = { version = "7.2", features = ["fancy"] }
 owo-colors = "4.0"
 indicatif = "0.17"
 inquire = "0.7"
+crossterm = "0.28"

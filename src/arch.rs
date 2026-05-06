@@ -1,6 +1,15 @@
 use crate::provider::{Package, PackageProvider};
 use miette::{miette, Result};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader};
+use std::thread;
+use std::time::Duration;
+use inquire::Confirm;
+use indicatif::{ProgressBar, ProgressStyle};
+use crossterm::event::{self, Event, KeyCode};
+use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
+use comfy_table::{Table, Cell, Color, Attribute, ContentArrangement};
+use owo_colors::OwoColorize;
 
 pub struct ArchProvider {
     helper: String,
@@ -143,18 +152,136 @@ impl PackageProvider for ArchProvider {
     }
 
     fn update(&self) -> Result<()> {
-        let mut cmd = Command::new(&self.helper);
+        println!("{} Checking for updates...", "=>".blue().bold());
+        let output = Command::new(&self.helper)
+            .arg("-Qu")
+            .output()
+            .map_err(|e| miette!("Failed to check for updates: {}", e))?;
+            
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
         
+        if lines.is_empty() {
+            println!("{} System is already up to date!", "=>".green().bold());
+            return Ok(());
+        }
+        
+        let mut table = Table::new();
+        table.load_preset(comfy_table::presets::UTF8_FULL)
+             .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+             .set_content_arrangement(ContentArrangement::Dynamic)
+             .set_header(vec!["Package", "Old Version", "New Version"]);
+             
+        for line in &lines {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            // Usually yay -Qu is: name old -> new
+            if parts.len() >= 4 && parts[parts.len() - 2] == "->" {
+                let new_ver = parts.last().unwrap();
+                let old_ver = parts[parts.len() - 3];
+                let name = parts[0..parts.len() - 3].join(" ");
+                
+                table.add_row(vec![
+                    Cell::new(name).add_attribute(Attribute::Bold),
+                    Cell::new(old_ver).fg(Color::DarkGrey),
+                    Cell::new(new_ver).fg(Color::Green),
+                ]);
+            } else {
+                table.add_row(vec![line.to_string(), "".to_string(), "".to_string()]);
+            }
+        }
+        
+        println!("{table}");
+        println!("{} {} packages to update.", "=>".yellow().bold(), lines.len());
+        
+        let ans = Confirm::new("Proceed with update?")
+            .with_default(true)
+            .prompt()
+            .unwrap_or(false);
+            
+        if !ans {
+            println!("{} Update cancelled.", "=>".red().bold());
+            return Ok(());
+        }
+        
+        let mut cmd = Command::new(&self.helper);
         if self.helper == "pacman" {
             cmd = Command::new("sudo");
             cmd.arg("pacman");
         }
+        cmd.arg("-Syu").arg("--noconfirm");
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
 
-        cmd.arg("-Syu");
+        let mut child = cmd.spawn().map_err(|e| miette!("Failed to start update: {}", e))?;
+        let stdout_pipe = child.stdout.take().unwrap();
+        let stderr_pipe = child.stderr.take().unwrap();
 
-        let status = cmd.status().map_err(|e| miette!("Failed to execute update: {}", e))?;
-        if !status.success() {
-            return Err(miette!("Update command failed"));
+        let (tx, rx) = std::sync::mpsc::channel();
+        
+        let tx_out = tx.clone();
+        thread::spawn(move || {
+            let reader = BufReader::new(stdout_pipe);
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    let _ = tx_out.send(l);
+                }
+            }
+        });
+
+        let tx_err = tx.clone();
+        thread::spawn(move || {
+            let reader = BufReader::new(stderr_pipe);
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    let _ = tx_err.send(l);
+                }
+            }
+        });
+
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(ProgressStyle::default_spinner()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+            .template("{spinner:.green} {msg}")
+            .unwrap());
+        pb.set_message("Updating system... Press 'v' for raw output");
+        pb.enable_steady_tick(Duration::from_millis(100));
+
+        enable_raw_mode().unwrap_or(());
+        let mut show_raw = false;
+        
+        loop {
+            if let Ok(Some(status)) = child.try_wait() {
+                disable_raw_mode().unwrap_or(());
+                pb.finish_and_clear();
+                if status.success() {
+                    println!("{} Update complete!", "=>".green().bold());
+                } else {
+                    return Err(miette!("Update failed with status: {}", status));
+                }
+                break;
+            }
+
+            if event::poll(Duration::from_millis(50)).unwrap_or(false) {
+                if let Ok(Event::Key(key_event)) = event::read() {
+                    if key_event.code == KeyCode::Char('v') && !show_raw {
+                        show_raw = true;
+                        pb.finish_and_clear();
+                        disable_raw_mode().unwrap_or(());
+                        println!("{} Switching to raw output...", "=>".cyan().bold());
+                    } else if key_event.code == KeyCode::Char('c') && key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
+                        disable_raw_mode().unwrap_or(());
+                        pb.finish_and_clear();
+                        let _ = child.kill();
+                        return Err(miette!("Update aborted by user."));
+                    }
+                }
+            }
+
+            while let Ok(msg) = rx.try_recv() {
+                if show_raw {
+                    println!("{}", msg);
+                }
+            }
         }
 
         Ok(())

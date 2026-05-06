@@ -25,3 +25,15 @@ To achieve a "Nala-like" premium user experience:
 - `i | install` -> `pacman -S --needed` (with AUR fallback)
 - `u | update`  -> `yay -Syu` / `pacman -Syu`
 - `c | clean`   -> Prune orphans and clear manager cache.
+
+## Interactive Update/Install Flow (Nala-Inspired)
+Package managers like `pacman` and `yay` prompt the user for input mid-execution, which breaks if we try to hide their output behind a spinner. To solve this and provide an escape hatch to native output:
+
+1. **Pre-flight Check**: Run the package manager with arguments to get a list of pending transactions (e.g., `yay -Qu` or `pacman -Qu`).
+2. **Custom Summary**: Parse this list and present it in a beautiful `comfy-table` (showing packages, old version -> new version).
+3. **Custom Prompt**: Use `inquire::Confirm` to ask the user if they want to proceed, rather than relying on `pacman`'s raw prompt.
+4. **Non-Interactive Execution**: Run `yay -Syu --noconfirm` as a piped subprocess.
+5. **Spinner & Escape Hatch**: 
+    - Show an `indicatif` spinner ("Updating system... Press 'v' for raw output").
+    - Use `crossterm` in raw mode to listen for keypresses non-blockingly while reading the subprocess output in a background thread.
+    - If the user presses `v`, we clear the spinner and seamlessly pipe the real-time package manager output straight to the terminal so they can see exactly what is happening.
