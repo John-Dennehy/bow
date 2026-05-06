@@ -4,7 +4,7 @@
 
 ## 🚀 The Vision
 
-I could never remember the different commands for package managers when I switched between Arch, Debian, Fedora, and macOS. So I made `bow`, a small cross-platform CLI front-end that abstracts the friction of distro-hopping. 
+I could never remember the different commands for package managers when I switched between Arch, Debian, Fedora, and macOS. So I made `bow`, a small cross-platform CLI front-end that abstracts the friction of distro-hopping.
 
 Inspired by `nala` on Debian, `bow` doesn't just wrap package managers; it makes them beautiful. It is built in Rust, features rich terminal UIs, and follows the XDG Base Directory Specification for configuration and state. (This is my first Rust project!)
 
@@ -15,6 +15,20 @@ Inspired by `nala` on Debian, `bow` doesn't just wrap package managers; it makes
 - **AUR Integration**: Seamlessly bridges the gap between official repos and the AUR (auto-detects `yay` and `paru`).
 - **XDG Native**: No clutter. Strictly adheres to system standards.
 - **Space Optimization**: Aggressive cleanup routines to keep your disk lean.
+
+## 📥 Installation
+
+Currently, `bow` must be built from source using Cargo. Ensure you have Rust installed on your system, then clone the repository and install:
+
+```bash
+git clone https://github.com/john-dennehy/bow.git
+cd bow
+cargo install --path .
+```
+
+This will compile the optimized release binary and place it in your `~/.cargo/bin` directory (ensure this is added to your system's `$PATH`).
+
+_(Pre-compiled binaries and an official AUR `PKGBUILD` are planned for the future!)_
 
 ## 📦 Commands
 
