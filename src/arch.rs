@@ -109,7 +109,10 @@ impl PackageProvider for ArchProvider {
     }
 
     fn install(&self, packages: &[String]) -> Result<()> {
-        println!("{} Packages to install: {:?}", "=>".blue().bold(), packages);
+        println!("{} Packages to install:", "=>".blue().bold());
+        for pkg in packages {
+            println!("   {} {}", "•".magenta(), pkg.white());
+        }
         
         let ans = Confirm::new("Proceed with installation?")
             .with_default(true)
@@ -137,7 +140,10 @@ impl PackageProvider for ArchProvider {
     }
 
     fn remove(&self, packages: &[String]) -> Result<()> {
-        println!("{} Packages to remove: {:?}", "=>".yellow().bold(), packages);
+        println!("{} Packages to remove:", "=>".yellow().bold());
+        for pkg in packages {
+            println!("   {} {}", "•".magenta(), pkg.white());
+        }
         
         let ans = Confirm::new("Proceed with removal?")
             .with_default(true)
@@ -251,8 +257,9 @@ impl PackageProvider for ArchProvider {
         }
 
         println!("{} Found {} orphaned packages to remove:", "=>".yellow().bold(), orphans.len());
-        // For a beautiful UX, we can just print the array or format it nicely.
-        println!("{:?}", orphans);
+        for pkg in &orphans {
+            println!("   {} {}", "•".magenta(), pkg.white());
+        }
 
         let ans = Confirm::new("Proceed with cleanup?")
             .with_default(true)
