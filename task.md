@@ -1,7 +1,9 @@
-- [ ] Initialize Cargo project and add core crates (`clap`, `anyhow`, `directories`).
-- [ ] Implement XDG path resolution for config/state.
-- [ ] Create `PackageProvider` trait in `src/provider.rs`.
-- [ ] Implement `ArchProvider` (handle `sudo`, `pacman`, and AUR helper detection).
-- [ ] Build the CLI routing logic (matching `s`, `i`, `u`, `c` and full words).
-- [ ] Implement the `clean` module (orphan pruning logic).
-- [ ] Generate the final portfolio-ready README.md.
+- [x] Initialize Cargo project and add core crates (`clap`, `directories`).
+- [x] Add UX crates (`color-eyre`/`miette`, `indicatif`, `comfy-table`, `inquire`, `owo-colors`).
+- [x] Implement XDG path resolution for config/state.
+- [x] Create `PackageProvider` trait in `src/provider.rs` with methods returning structured data.
+- [x] Implement `ArchProvider` (handle `sudo`, `pacman`, and AUR helper detection).
+- [x] Intercept and parse package manager output to render rich tables and summaries (Nala-style).
+- [x] Build the CLI routing logic (matching `s`, `i`, `u`, `c` and full words).
+- [x] Implement the `clean` module (orphan pruning logic).
+- [x] Generate the final portfolio-ready README.md.

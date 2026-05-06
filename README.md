@@ -4,12 +4,15 @@
 
 ## 🚀 The Vision
 
-I could never remember thes different commands for package managers when I switched between Arch, Debian, Fedora, and macOS. So I made `bow`, a small cross-platform CLI front-end that abstracts the friction of distro-hopping. It is built in Rust and follows the XDG Base Directory Specification for configuration and state. (This is my first Rust project!)
+I could never remember the different commands for package managers when I switched between Arch, Debian, Fedora, and macOS. So I made `bow`, a small cross-platform CLI front-end that abstracts the friction of distro-hopping. 
+
+Inspired by `nala` on Debian, `bow` doesn't just wrap package managers; it makes them beautiful. It is built in Rust, features rich terminal UIs, and follows the XDG Base Directory Specification for configuration and state. (This is my first Rust project!)
 
 ## 🛠 Features
 
-- **Unified Syntax**: Memorize four letters: `s`, `i`, `u`, `c`.
-- **AUR Integration**: Seamlessly bridges the gap between official repos and the AUR.
+- **Unified Syntax**: Memorize five letters: `s`, `i`, `r`, `u`, `c`.
+- **Beautiful UX**: Rich tables (`comfy-table`), vibrant colors (`owo-colors`), and clean error reporting (`miette`).
+- **AUR Integration**: Seamlessly bridges the gap between official repos and the AUR (auto-detects `yay` and `paru`).
 - **XDG Native**: No clutter. Strictly adheres to system standards.
 - **Space Optimization**: Aggressive cleanup routines to keep your disk lean.
 
@@ -34,10 +37,18 @@ Installs a package from the official repositories or the AUR.
 ### Uninstall
 
 ```bash
-bow u <package>
+bow r <package>
 ```
 
 Uninstalls a package from the system.
+
+### Update
+
+```bash
+bow u
+```
+
+Updates the system.
 
 ### Clean
 
