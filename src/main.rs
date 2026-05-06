@@ -64,6 +64,7 @@ fn main() -> Result<()> {
             let mut table = Table::new();
             table.load_preset(comfy_table::presets::UTF8_FULL)
                  .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+                 .set_content_arrangement(comfy_table::ContentArrangement::Dynamic)
                  .set_header(vec!["Repository", "Name", "Version", "Description", "Status"]);
             
             for pkg in results {

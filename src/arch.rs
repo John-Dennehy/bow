@@ -49,16 +49,54 @@ impl PackageProvider for ArchProvider {
             return Err(miette!("Search command failed"));
         }
 
-        // Dummy return - parsing logic would go here to extract name, version, etc.
-        Ok(vec![
-            Package {
-                name: query.to_string(),
-                version: "1.0.0".to_string(),
-                description: "Simulated package description".to_string(),
-                is_installed: false,
-                repository: "core".to_string(),
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut packages = Vec::new();
+        let mut current_package: Option<Package> = None;
+
+        for line in stdout.lines() {
+            let line = line.trim_end();
+            if line.is_empty() { continue; }
+            
+            if !line.starts_with(' ') {
+                // This is a package header line: `repo/name version (groups) [installed]`
+                if let Some(pkg) = current_package.take() {
+                    packages.push(pkg);
+                }
+                
+                let mut parts = line.split_whitespace();
+                let repo_name = parts.next().unwrap_or("");
+                let version = parts.next().unwrap_or("").to_string();
+                
+                let (repo, name) = if let Some((r, n)) = repo_name.split_once('/') {
+                    (r, n)
+                } else {
+                    ("", repo_name)
+                };
+                
+                let lower_line = line.to_lowercase();
+                let is_installed = lower_line.contains("installed") || lower_line.contains("installiert");
+                
+                current_package = Some(Package {
+                    name: name.to_string(),
+                    version,
+                    description: String::new(),
+                    is_installed,
+                    repository: repo.to_string(),
+                });
+            } else {
+                // Description line (indented)
+                if let Some(mut pkg) = current_package.take() {
+                    pkg.description = line.trim().to_string();
+                    packages.push(pkg);
+                }
             }
-        ])
+        }
+        
+        if let Some(pkg) = current_package {
+            packages.push(pkg);
+        }
+
+        Ok(packages)
     }
 
     fn install(&self, packages: &[String]) -> Result<()> {
